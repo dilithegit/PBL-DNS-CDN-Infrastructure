@@ -4,256 +4,184 @@
 
 ---
 
-## Team Contributions
+## Team Contributions & Roles
 
-### Dili — DNS Tree Architect
-Built and verified the complete 7-VM DNS hierarchy:
-- **Root DNS Primary** (`192.168.56.30`): BIND9 root zone, authoritative for `.`
-- **Root DNS Secondary** (`192.168.56.90`): Zone transfer slave of root
-- **TLD 1 `.cns`** (`192.168.56.40` + `192.168.56.50`): Two NS records for `.cns` TLD
-- **TLD 2 `.isp`** (`192.168.56.80`): Second TLD zone
-- **Authoritative DNS `ozy.cns`** (`192.168.56.10`): A, MX, TXT (SPF, DKIM, DMARC), PTR records
-- **Recursive Resolver** (`192.168.56.20`): Custom `db.root.hints`, walks the full 4-tier tree
+### 👤 Okwudili Ujubuonu (Dili) — Authoritative DNS, Security Policies & PTR
+- **Level 3 Authoritative Server** (`192.168.56.10`): BIND 9
+- Implemented **Forward-Confirmed Reverse DNS (FCrDNS)** in `56.168.192.in-addr.arpa`
+- Published SPF TXT record: `"v=spf1 ip4:192.168.56.20 ip4:192.168.56.25 mx -all"`
+- Formatted and published 2048-bit DKIM key under `default._domainkey.ozy.cns`
+- Published DMARC quarantine policy: `_dmarc.ozy.cns` -> `"v=DMARC1; p=quarantine; ..."`
+- Executes the live DNS disruption tests during presentation
 
-**Key config files:**
-- `/etc/bind/db.ozy.cns` — Forward zone with MX, SPF, DKIM, DMARC records
-- `/etc/bind/db.56.168.192.in-addr.arpa` — Reverse PTR zone
-- `/etc/bind/named.conf.local` — Zone declarations
+### 👤 Roy — Primary MTA & DKIM Cryptography Lead
+- **Mail Server 1** (`192.168.56.20`): Exim4 (heavy) + Dovecot
+- Generated 2048-bit RSA private key `/etc/exim4/dkim/ozy.cns.private`
+- Configured DKIM signing transport on `remote_smtp`
+- Diagnosed and fixed Exim private-root DNSSEC coercion (`dns_dnssec_ok = -1`)
+- Configured `mail2_manual` direct delivery router to Server 2 (`192.168.56.25`)
 
----
+### 👤 Austin — MTA Transport Security & TLS 1.3 Audit
+- Configured STARTTLS on port 25 and verified modern cipher negotiation
+- Monitors live cryptographic transit: `TLS1.3:ECDHE_SECP256R1__AES_256_GCM:256`
 
-### Roy — Distributed Email System (DES)
-Built the dual-server email system with SPF, DKIM, PTR, and DMARC verification:
-- **Mail Server 1** (`192.168.56.20`): Exim4-heavy + Dovecot + Roundcube + MariaDB, user `dili`
-- **Mail Server 2** (`192.168.56.25`): Exim4-heavy + Dovecot, user `roy2`
-- Generated 2048-bit RSA DKIM key pair on Server 1 (`/etc/exim4/dkim/ozy.cns.private`)
-- Published DKIM public key to DNS (`default._domainkey.ozy.cns`)
-- Configured `mail2_manual` Exim router for cross-server delivery to `192.168.56.25`
-- Disabled DNSSEC validation (`dns_dnssec_ok = -1`) for private lab DNS tree
-- Verified TLS 1.3 encrypted transit between servers in Exim mainlog
+### 👤 Joe — Routing Tracing & DNSSEC Resolver Diagnostics
+- Handled Exim resolver debugging (`exim4 -d-all+route+resolver -bt`)
+- Verified address routing resolves cleanly across the private `.cns` hierarchy
 
----
+### 👤 Joy Ndira — Secondary MTA Architecture & Maildir Verification
+- **Mail Server 2** (`192.168.56.25`): Secondary MX (priority 20)
+- Configured recipient delivery accepting `@mail2.ozy.cns` and `@ozy.cns`
+- Created user `roy2` with Maildir storage at `/home/roy2/Maildir/`
+- Configured strict FCrDNS enforcement rejecting unverified sender IPs
 
-## VM Layout
-
-| VM | IP | Role | Key Software |
-|---|---|---|---|
-| DNS Authoritative | `192.168.56.10` | Zone authority for `ozy.cns` | BIND9 |
-| Mail Server 1 | `192.168.56.20` | Primary MTA + Recursive Resolver | Exim4, Dovecot, BIND9 |
-| Mail Server 2 | `192.168.56.25` | Secondary MTA, `roy2` mailbox | Exim4, Dovecot |
+### 👤 Joy Kioko — Bidirectional Transport & Hard Bounce Verification
+- Verified return mail relaying from Server 2 back to Server 1 (`dili@ozy.cns`)
+- Validates the live `550 Rejected` hard bounce failure log in `/var/log/exim4/mainlog`
 
 ---
 
-## Roy's Demo Commands
-
-> Run these live during the presentation to prove each security layer.
-> **Important:** Always use `sudo bash -c '...'` when reading Maildir files.
+## 🚀 Live Demonstration Script (Step-by-Step for Lecturer)
 
 ---
 
-### 1. Verify All DNS Records (run on Mail Server 2: `192.168.56.25`)
+### Step 1: Verify All Authoritative DNS Records
+**Run on DNS Server (`192.168.56.10`) or Mail Server 2 (`192.168.56.25`):**
 
 ```bash
-# PTR — Reverse lookup for both mail servers
+# 1. Reverse DNS (PTR) for both Mail Servers
 dig @192.168.56.10 -x 192.168.56.20 +short
 # Expected: mail.ozy.cns.
 
 dig @192.168.56.10 -x 192.168.56.25 +short
 # Expected: mail2.ozy.cns.
 
-# SPF — Authorized sender IPs
+# 2. SPF Record
 dig @192.168.56.10 ozy.cns TXT +short
 # Expected: "v=spf1 ip4:192.168.56.20 ip4:192.168.56.25 mx -all"
 
-# DKIM — Public key in DNS
+# 3. DKIM 2048-bit Public Key
 dig @192.168.56.10 default._domainkey.ozy.cns TXT +short
-# Expected: "v=DKIM1; k=rsa; p=MIIBIjAN..."
+# Expected: "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvHNsLsLh6..."
 
-# DMARC — Policy record
+# 4. DMARC Policy Record
 dig @192.168.56.10 _dmarc.ozy.cns TXT +short
 # Expected: "v=DMARC1; p=quarantine; rua=mailto:dili@ozy.cns; adkim=s; aspf=s"
 ```
 
 ---
 
-### 2. Send a Signed Cross-Server Email (run on Mail Server 1: `192.168.56.20`)
+### Step 2: Send a Cryptographically Signed Email (Server 1 -> Server 2)
+**Run on Mail Server 1 (`192.168.56.20`):**
 
 ```bash
-echo "Live DES demo: SPF + DKIM + PTR + DMARC verification." | mail -s "PBL DES Assessment Demo" roy2@mail2.ozy.cns
+echo "Live DES demonstration: SPF + DKIM + PTR + DMARC verified." | mail -s "PBL DES Success Demo" roy2@mail2.ozy.cns
 ```
 
----
-
-### 3. Verify Delivery in Exim Log (run on Mail Server 1: `192.168.56.20`)
-
+Check outbound delivery in Exim log:
 ```bash
 sudo tail -n 10 /var/log/exim4/mainlog
 ```
 
-**What to point out in the log:**
-```
+**Look for this live output:**
+```text
 => roy2@mail2.ozy.cns R=mail2_manual T=remote_smtp H=192.168.56.25 [192.168.56.25]
    X=TLS1.3:ECDHE_SECP256R1__RSA_PSS_RSAE_SHA256__AES_256_GCM:256
-   Completed
+   C="250- 1322 byte chunk, total 1322\n250 OK"
+Completed
 ```
-- `R=mail2_manual` → custom router delivered to Server 2
-- `T=remote_smtp` → real SMTP delivery
-- `H=192.168.56.25` → correct destination host
-- `X=TLS1.3:...AES_256_GCM` → **TLS 1.3 encrypted transit** ✅
+*Points to explain to lecturer:*
+- `R=mail2_manual T=remote_smtp` -> Real SMTP transmission over network
+- `X=TLS1.3:...AES_256_GCM` -> **TLS 1.3 encrypted transit**
 
 ---
 
-### 4. Inspect Full Email Headers (run on Mail Server 2: `192.168.56.25`)
+### Step 3: Inspect Cryptographic DKIM Headers in Recipient Maildir
+**Run on Mail Server 2 (`192.168.56.25`):**
 
 ```bash
-# List arrived emails
-sudo ls /home/roy2/Maildir/new/
-
-# Read DKIM signature from the latest email
 sudo bash -c 'cat /home/roy2/Maildir/new/* | grep -A 15 "DKIM-Signature"'
-
-# Read full headers of the latest email
-sudo bash -c 'cat /home/roy2/Maildir/new/* | grep -i "received\|dkim\|subject\|from\|to"'
 ```
 
-**What to point out in the DKIM header:**
+**Live Verified Header:**
+```text
+DKIM-Signature: v=1; a=rsa-sha256; q=dns/txt; c=relaxed/relaxed; d=ozy.cns;
+        s=default; h=Date:From:Message-Id:Content-Transfer-Encoding:Content-Type:
+        MIME-Version:Subject:To;
+        bh=DkzPNVpU7XM7b1rDRnceq1h6ZkpsNeJx7RJwrXslBjY=;
+        b=VK6MdD9EhfiMjuWtDOOIWD87tf+qZ7Gxalbt+nV7hWcAAYvkC3xCGYuv/TVzxOt2...
 ```
-DKIM-Signature: v=1; a=rsa-sha256; q=dns/txt; c=relaxed/relaxed;
-        d=ozy.cns; s=default;
-        bh=Qgofv6ab8NNQZzeLLDYCV9JYWHkgWglyA8/RNnuDejA=;
-        b=eEL/wkkmHUwx07hOA...YMu5brZQ==;
-```
-- `v=1; a=rsa-sha256` → DKIM signed with RSA-SHA256 ✅
-- `d=ozy.cns; s=default` → Selector matches `default._domainkey.ozy.cns` DNS record ✅
-- `bh=...` → Body hash proves content wasn't tampered with ✅
-
-**What to point out in Received header:**
-```
-Received: from [192.168.56.20] (helo=vbox.strathmore.local)
-        by mail2.ozy.cns with esmtps (TLS1.3) tls TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
-```
-- `from [192.168.56.20]` → Source IP matches PTR and SPF ✅
-- `TLS1.3 ... AES_256_GCM` → Encrypted transit ✅
+*Points to explain to lecturer:*
+- `v=1; a=rsa-sha256` -> Cryptographic signature generated by Server 1
+- `d=ozy.cns; s=default` -> Matches the public key published in DNS zone
 
 ---
 
-### 5. PTR Disruption Demo
-**Dili runs on DNS Server (`192.168.56.10`)**
+### Step 4: The Disruption Test — Demonstrating the 550 Hard Bounce
+> This proves that without a valid PTR reverse lookup, Mail Server 2 strictly **rejects** the email, and it bounces right back to the sender!
 
-**Step 1 — Comment out PTR record:**
+#### A. Break the Reverse DNS Record
+**On DNS Server (`192.168.56.10`):**
 ```bash
-sudo nano /etc/bind/db.56.168.192.in-addr.arpa
-# Change:   20  IN  PTR  mail.ozy.cns.
-# To:      ;20  IN  PTR  mail.ozy.cns.
+# Comment out the PTR record for Server 1 (.20):
+sudo sed -i 's/^20.*/;20      IN  PTR     mail.ozy.cns./' /etc/bind/db.56.168.192.in-addr.arpa
 sudo systemctl reload bind9
-```
 
-**Step 2 — Verify PTR is gone:**
-```bash
+# Confirm PTR is gone:
 dig @192.168.56.10 -x 192.168.56.20 +short
-# Expected: (empty)
+# Output: (EMPTY)
 ```
 
-**Step 3 — Roy sends email from Server 1, Dili checks log on Server 2:**
+#### B. Send Email and Watch the 550 Hard Bounce!
+**On Mail Server 1 (`192.168.56.20`):**
 ```bash
-# Roy runs on Server 1 (192.168.56.20):
-echo "PTR disruption test" | mail -s "PTR Test" roy2@mail2.ozy.cns
+echo "This email will not send and must bounce!" | mail -s "Bounce Test" roy2@mail2.ozy.cns
+sudo tail -n 10 /var/log/exim4/mainlog
+```
 
-# Dili checks log on Server 2 (192.168.56.25):
+**Live Verified Rejection Log:**
+```text
+1xU1Te-000000000jB-0yUp <= dili@ozy.cns U=dili P=local S=471
+1xU1Te-000000000jB-0yUp ** roy2@mail2.ozy.cns R=mail2_manual T=remote_smtp H=192.168.56.25 [192.168.56.25]
+  X=TLS1.3:ECDHE_SECP256R1__RSA_PSS_RSAE_SHA256__AES_256_GCM:256:
+  SMTP error from remote mail server after RCPT TO:<roy2@mail2.ozy.cns>:
+  550-Mail rejected: Sender IP 192.168.56.20 has no valid reverse DNS (PTR) record.
+1xU1Te-000000000jG-20r8 <= <> R=1xU1Te-000000000jB-0yUp U=Debian-exim P=local S=2072
+1xU1Te-000000000jB-0yUp Completed
+1xU1Te-000000000jG-20r8 => dili <dili@ozy.cns> R=local_user T=maildir_home
+```
+*What this proves:*
+- `SMTP error after RCPT TO: 550-Mail rejected: Sender IP has no valid reverse DNS (PTR)` -> Hard protocol drop
+- `<= <>` -> Exim generated an RFC failure report (NDR) and bounced it back to `dili`'s mailbox!
+
+#### C. Restore the Reverse DNS Record
+**On DNS Server (`192.168.56.10`):**
+```bash
+sudo sed -i 's/^;20.*/20      IN  PTR     mail.ozy.cns./' /etc/bind/db.56.168.192.in-addr.arpa
+sudo systemctl reload bind9
+
+dig @192.168.56.10 -x 192.168.56.20 +short
+# Output: mail.ozy.cns. (Restored!)
+```
+
+#### D. Resend — Delivery Immediately Recovers
+**On Mail Server 1 (`192.168.56.20`):**
+```bash
+echo "Back online and passing!" | mail -s "Restored" roy2@mail2.ozy.cns
 sudo tail -n 5 /var/log/exim4/mainlog
-# Shows: no host name found for IP address 192.168.56.20
-```
-
-**Step 4 — Restore PTR record:**
-```bash
-sudo nano /etc/bind/db.56.168.192.in-addr.arpa
-# Uncomment:  20  IN  PTR  mail.ozy.cns.
-sudo systemctl reload bind9
-dig @192.168.56.10 -x 192.168.56.20 +short
-# Expected: mail.ozy.cns.  (restored)
+# Output: => roy2@mail2.ozy.cns ... 250 OK ... Completed!
 ```
 
 ---
 
-### 6. SPF Disruption Demo
-**Dili runs on DNS Server (`192.168.56.10`)**
+## 📊 Assessment Rubric Verification Matrix
 
-**Step 1 — Comment out SPF record:**
-```bash
-sudo nano /etc/bind/db.ozy.cns
-# Change:  @ IN TXT "v=spf1 ip4:192.168.56.20 ip4:192.168.56.25 mx -all"
-# To:     ;@ IN TXT "v=spf1 ..."
-sudo named-checkzone ozy.cns /etc/bind/db.ozy.cns
-sudo systemctl reload bind9
-```
-
-**Step 2 — Verify SPF gone:**
-```bash
-dig @192.168.56.10 ozy.cns TXT +short
-# Returns only DMARC line, no SPF
-```
-
-**Step 3 — Restore:**
-```bash
-sudo nano /etc/bind/db.ozy.cns
-# Uncomment the SPF TXT line
-sudo named-checkzone ozy.cns /etc/bind/db.ozy.cns
-sudo systemctl reload bind9
-dig @192.168.56.10 ozy.cns TXT +short
-# Expected: "v=spf1 ip4:192.168.56.20 ip4:192.168.56.25 mx -all"
-```
-
----
-
-### 7. DKIM Disruption Demo
-**Dili runs on DNS Server (`192.168.56.10`)**
-
-**Step 1 — Comment out DKIM record:**
-```bash
-sudo nano /etc/bind/db.ozy.cns
-# Comment the entire default._domainkey IN TXT ( ... ) block with ;
-sudo named-checkzone ozy.cns /etc/bind/db.ozy.cns
-sudo systemctl reload bind9
-```
-
-**Step 2 — Verify DKIM key gone:**
-```bash
-dig @192.168.56.10 default._domainkey.ozy.cns TXT +short
-# Expected: (empty)
-```
-
-**Step 3 — Roy sends email and shows missing DKIM in headers:**
-```bash
-# Roy sends from Server 1:
-echo "DKIM disruption test" | mail -s "DKIM Test" roy2@mail2.ozy.cns
-
-# Check headers on Server 2 — DKIM signature still present (signed by Server 1)
-# but recipient server cannot VERIFY it (key not in DNS)
-sudo bash -c 'cat /home/roy2/Maildir/new/* | grep -i "dkim"' | tail -5
-```
-
-**Step 4 — Restore:**
-```bash
-sudo nano /etc/bind/db.ozy.cns
-# Uncomment the full default._domainkey IN TXT ( ... ) block
-sudo named-checkzone ozy.cns /etc/bind/db.ozy.cns
-sudo systemctl reload bind9
-dig @192.168.56.10 default._domainkey.ozy.cns TXT +short
-# Expected: "v=DKIM1; k=rsa; p=MIIBIjAN..."
-```
-
----
-
-## Assessment Rubric Summary
-
-| Item | Evidence | Command to prove it |
+| Assessment Requirement | Technical Evidence | Demonstration Command |
 |---|---|---|
-| PTR record for `.20` | `mail.ozy.cns.` | `dig @192.168.56.10 -x 192.168.56.20 +short` |
-| PTR record for `.25` | `mail2.ozy.cns.` | `dig @192.168.56.10 -x 192.168.56.25 +short` |
-| Removing PTR causes warning | `no host name found for IP address 192.168.56.20` in Exim log | Comment PTR, reload, resend, `sudo tail -n 5 /var/log/exim4/mainlog` |
-| SPF TXT record | `v=spf1 ip4:...` | `dig @192.168.56.10 ozy.cns TXT +short` |
-| DKIM public key in DNS | `v=DKIM1; k=rsa; p=...` | `dig @192.168.56.10 default._domainkey.ozy.cns TXT +short` |
-| DKIM-Signature in email | `v=1; a=rsa-sha256; d=ozy.cns; s=default` | `sudo bash -c 'cat /home/roy2/Maildir/new/* \| grep -A 15 "DKIM-Signature"'` |
-| DMARC policy record | `v=DMARC1; p=quarantine` | `dig @192.168.56.10 _dmarc.ozy.cns TXT +short` |
-| Cross-server SMTP delivery | `=> roy2@mail2.ozy.cns ... Completed` | `sudo tail -n 10 /var/log/exim4/mainlog` on Server 2 |
-| TLS 1.3 encrypted transit | `X=TLS1.3:ECDHE_SECP256R1__AES_256_GCM` | Same Exim mainlog line |
+| **Forward DNS MX Integration** | Dual MX priorities: `10 mail` & `20 mail2` | `dig @192.168.56.10 ozy.cns MX +short` |
+| **Reverse DNS (PTR) Record** | `mail.ozy.cns.` returned for `.20` | `dig @192.168.56.10 -x 192.168.56.20 +short` |
+| **Sender Policy Framework (SPF)** | TXT record authorizing `.20` and `.25` with `-all` | `dig @192.168.56.10 ozy.cns TXT +short` |
+| **DKIM 2048-bit Cryptography** | Public key in DNS, private key signature in header | `dig @192.168.56.10 default._domainkey.ozy.cns TXT +short`<br/>`cat /home/roy2/Maildir/new/* \| grep DKIM` |
+| **DMARC Policy Enforcement** | Quarantine enforcement record in DNS | `dig @192.168.56.10 _dmarc.ozy.cns TXT +short` |
+| **Cross-Server Delivery Failure** | **550 Hard Bounce** when PTR is removed | `mail -s "Test" roy2@mail2.ozy.cns` -> `550 Mail rejected` in mainlog |
+| **Transport Layer Security (TLS)** | TLS 1.3 negotiated on port 25 | `grep "TLS1.3" /var/log/exim4/mainlog` |
