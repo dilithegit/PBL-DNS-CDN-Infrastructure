@@ -50,9 +50,9 @@ Every member has an exact technical script and command to show for BOTH the Emai
 - **Demo Command:** `sudo grep "TLS1.3" /var/log/exim4/mainlog`
 
 ### In the Content Delivery Network (CDN):
-> *"In the CDN, I worked on the Edge Cache 1 configuration and origin integration. I verified that Nginx properly manages cache validity windows, handles cache expiration, and correctly fetches from the Apache backend on `192.168.56.20` only during an initial cache miss, offloading all subsequent requests onto the edge."*
+> *"In the CDN, I worked on the Edge Cache 1 configuration, origin reverse proxy integration, and cache lifecycle management. I verified that Nginx properly manages cache validity windows (`proxy_cache_valid 200 10m`), handles cache expiration, and correctly fetches from the Apache backend on `192.168.56.20` only during an initial cache miss. In Step 6 of our demo, I demonstrate the speed-versus-freshness trade-off by showing how the edge continues serving valid cached objects until an administrative cache purge (`rm -rf /var/cache/nginx/* && systemctl reload nginx`) pushes updated origin content immediately to clients."*
 - **Primary VM:** `192.168.56.71` (Edge Cache Africa)
-- **Demo Command:** `curl -sI "http://192.168.56.71" | grep -i "x-cache-status"`
+- **Demo Command:** `curl -sI "http://192.168.56.71/?v=live_demo" | grep -iE "x-cache-status|x-served"`
 
 ---
 
@@ -78,7 +78,7 @@ Every member has an exact technical script and command to show for BOTH the Emai
 - **Demo Commands:** `sudo bash -c 'cat /home/roy2/Maildir/new/* | grep -A 15 "DKIM-Signature"'`, `sudo tail -n 10 /var/log/exim4/mainlog`
 
 ### In the Content Delivery Network (CDN):
-> *"In the CDN, I operate the Dedicated European Client on `192.168.56.70`. Because my VM resides in the European subnet (`192.168.56.64+`), when I query `cdn.ozy.cns`, Geo-DNS automatically directs me to our Europe Edge at `192.168.56.72`. I demonstrate live that my requests are serviced with `X-Served-By: Edge-Cache-Europe (192.168.56.72)` with full cache acceleration (`X-Cache-Status: HIT`), proving geographical proximity routing."*
+> *"In the CDN, I operate the Dedicated European Client on `192.168.56.70`. Because my VM resides in the European subnet (`192.168.56.64+`), when I query `cdn.ozy.cns`, Geo-DNS automatically directs me to our Europe Edge at `192.168.56.72`. I demonstrate live that my requests are serviced with `X-Served-By: Edge-Cache-Europe (192.168.56.72)` with full cache acceleration (`X-Cache-Status: HIT`), proving geographical proximity routing. In Step 5 of our demo, I demonstrate the measurable latency difference: when synthetic intercontinental delay (100ms) is applied to Europe via Linux `tc netem`, requests served from the local African edge respond in ~3ms while the distant European edge takes ~210ms, proving the tangible end-user speed benefit of proximity routing."*
 - **Primary VM:** `192.168.56.70` (European Client)
 - **Demo Commands:** `dig @192.168.56.10 cdn.ozy.cns +short`, `curl -sI "http://cdn.ozy.cns/?v=europe_user" | grep -iE "x-served|x-cache"`
 
