@@ -198,6 +198,26 @@ Run from each client to demonstrate that the client connects to and receives con
   X-Served-By: Edge-Cache-Europe (192.168.56.72)
   ```
 
+#### 2c. From Windows Host (PowerShell Check)
+* **Why:** Demonstrates that testing is not restricted to Linux VM shells; the host machine or external Windows endpoints on the VirtualBox Host-Only network (`192.168.56.1`) can independently verify edge delivery and caching headers.
+* **PowerShell Command (Option 1 — using `curl.exe` with `Select-String`):**
+  ```powershell
+  curl.exe -sI "http://192.168.56.71/" | Select-String -Pattern "X-Served|X-Cache"
+  ```
+* **PowerShell Command (Option 2 — native `Invoke-WebRequest`):**
+  ```powershell
+  $response = Invoke-WebRequest -Uri "http://192.168.56.71/" -Method Head
+  $response.Headers | Select-Object "X-Cache-Status", "X-Served-By"
+  ```
+* **Meaning:**
+  - `curl.exe` (or `Invoke-WebRequest -Method Head`) sends a standard HTTP HEAD query directly from the Windows PowerShell environment.
+  - `Select-String -Pattern "X-Served|X-Cache"` is the native PowerShell equivalent to Linux `grep -iE`.
+* **Expected Output:**
+  ```text
+  X-Cache-Status: HIT
+  X-Served-By: Edge-Cache-Africa (192.168.56.71)
+  ```
+
 ---
 
 ### Step 3: Edge Caching (MISS then HIT Lifecycle)
