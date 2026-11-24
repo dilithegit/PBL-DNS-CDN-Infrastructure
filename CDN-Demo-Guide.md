@@ -1,140 +1,126 @@
-# Content Delivery Network (CDN) — Practical 4-VM Regional Demo Guide
+# Content Delivery Network (CDN) — Dedicated Multi-Region Demo Guide
 **Course:** Computer Networks & Internetworking (CNS3204)  
 **Domain:** `ozy.cns` | **Subnet:** `192.168.56.0/24`  
 **Repository:** https://github.com/dilithegit/PBL-DNS-CDN-Infrastructure
 
 ---
 
-## 🎯 The Core Requirement Addressed
+## 🌍 The Problem & The Lecturer's Requirement
 > *"There should be servers in different regions. When a client initiates a request to access content from a server, the request must be serviced by the server closest to the client."*
 
-This practical guide requires **ONLY 4 running VMs**:
-1. **Authoritative Geo-DNS Server** (`192.168.56.10`): Evaluates client source IP and routes to nearest edge.
-2. **Origin Web Server** (`192.168.56.20`): Apache2 backend storing the master web pages.
-3. **Edge Cache Node 1 (Region Africa)** (`192.168.56.71`): Nginx reverse proxy serving the local Africa subnet (`192.168.56.0/26`).
-4. **Edge Cache Node 2 (Region Europe)** (`192.168.56.72`): Nginx reverse proxy serving remote clients (`192.168.56.64` to `.254`).
+In this architecture, our network deploys two distinct regional client zones and two matching regional edge cache servers:
+1. **Region Africa (Local Subnet `192.168.56.0/26` — IPs `.1` to `.63`):**
+   - **Dedicated African Client:** `192.168.56.25` (Client VM)
+   - **Nearest Regional Edge:** `192.168.56.71` (`Edge-Cache-Africa`)
+2. **Region Europe (Remote Subnet `192.168.56.64/26` — IPs `.64` to `.254`):**
+   - **Dedicated European Client:** `192.168.56.70` (Client VM)
+   - **Nearest Regional Edge:** `192.168.56.72` (`Edge-Cache-Europe`)
+3. **Central Origin Server (`192.168.56.20`):**
+   - Apache2 web server hosting the master content.
 
 ---
 
-## 🗺️ Visual Architecture
+## 🗺️ Architectural Topology
 
 ```
-                  Client Queries: http://cdn.ozy.cns
-                                  │
-                                  ▼
-             ┌──────────────────────────────────────────┐
-             │       Authoritative Geo-DNS (BIND9)      │
-             │              192.168.56.10               │
-             │   Evaluates Client Subnet via Views      │
-             └────────────────────┬─────────────────────┘
-                                  │
-         ┌────────────────────────┴────────────────────────┐
-         │                                                 │
- (Client in Africa Subnet: .20)            (Client in Europe Subnet: .72)
-         ▼                                                 ▼
-┌───────────────────────────────┐         ┌───────────────────────────────┐
-│       Edge Cache Node 1       │         │       Edge Cache Node 2       │
-│         Region: Africa        │         │         Region: Europe        │
-│         192.168.56.71         │         │         192.168.56.72         │
-│      Nginx Reverse Proxy      │         │      Nginx Reverse Proxy      │
-└───────────────┬───────────────┘         └───────────────┬───────────────┘
-                │                                         │
-                └────────────────────┬────────────────────┘
-                                     │ (Cache Miss Fetch Only)
-                                     ▼
-                      ┌─────────────────────────────┐
-                      │     Origin Web Server       │
-                      │     192.168.56.20:80        │
-                      │         (Apache2)           │
-                      └─────────────────────────────┘
+                  African Client (192.168.56.25)             European Client (192.168.56.70)
+                         │                                                 │
+                         │ Query: http://cdn.ozy.cns                       │ Query: http://cdn.ozy.cns
+                         ▼                                                 ▼
+             ┌──────────────────────────────────────────────────────────────────┐
+             │                  Authoritative Geo-DNS (BIND9)                   │
+             │                          192.168.56.10                           │
+             │             Evaluates Client IP via Split-Horizon Views          │
+             └──────────────────┬────────────────────────────┬──────────────────┘
+                                │                            │
+                (Africa Subnet: .25 in .0/26)      (Europe Subnet: .70 in .64+)
+                                ▼                            ▼
+                  Resolves to: 192.168.56.71    Resolves to: 192.168.56.72
+                                │                            │
+                                ▼                            ▼
+                 ┌─────────────────────────────┐┌─────────────────────────────┐
+                 │      Edge Cache Africa      ││      Edge Cache Europe      │
+                 │        192.168.56.71        ││        192.168.56.72        │
+                 │     Nginx Reverse Proxy     ││     Nginx Reverse Proxy     │
+                 └──────────────┬──────────────┘└──────────────┬──────────────┘
+                                │                              │
+                                └──────────────┬───────────────┘
+                                               │ (Cache Miss Fetch Only)
+                                               ▼
+                                 ┌─────────────────────────────┐
+                                 │      Origin Web Server      │
+                                 │        192.168.56.20        │
+                                 │          (Apache2)          │
+                                 └─────────────────────────────┘
 ```
 
 ---
 
-## 🎬 Live Demonstration Script (Step-by-Step for Presentation)
+## 🎬 Live Demonstration Script for Lecturer Assessment
 
-### Step 1: Explain the Geography to the Lecturer
-> *"Sir, we have two geographic regions simulated on our network:
-> - **Region Africa:** Subnet `192.168.56.0/26` (e.g. Client VM at `.20` or host laptop)
-> - **Region Europe:** Subnet `192.168.56.64/26` (e.g. Client VM at `.72`)
-> 
-> When clients in different regions request the exact same URL `http://cdn.ozy.cns`, Geo-DNS automatically steers them to the server closest to them."*
+### Step 1: Open the Two Dedicated Client Terminals Side-by-Side
+
+Show the lecturer two terminal windows:
+- **Terminal 1:** Dedicated African Client (`192.168.56.25`)
+- **Terminal 2:** Dedicated European Client (`192.168.56.70`)
 
 ---
 
-### Step 2: Show Regional Proximity Steering Live
-
-Open two terminal windows side-by-side:
-
-#### Terminal 1 — Client in Region Africa (`192.168.56.20`):
+### Step 2: Query from the African Client (`192.168.56.25`)
+**In Terminal 1 (African Client):**
 ```bash
-# 1. Ask DNS where cdn.ozy.cns is:
+# Query Geo-DNS:
 dig @192.168.56.10 cdn.ozy.cns +short
 ```
-* **Output:** `192.168.56.71` *(DNS routed client to the closest Africa edge!)*
+* **DNS Result:** **`192.168.56.71`** *(Geo-DNS automatically steers the African client to Africa Edge!)*
 
 ```bash
-# 2. Fetch the webpage using the domain name:
-curl -sI "http://cdn.ozy.cns" | grep -iE "x-served|x-cache"
+# Fetch Content via Domain Name:
+curl -sI "http://cdn.ozy.cns/?v=africa_user" | grep -iE "x-served|x-cache"
 ```
-* **Verified Header Output:**
-  ```text
-  X-Cache-Status: HIT
-  X-Served-By: Edge-Cache-Africa (192.168.56.71)
-  ```
-
----
-
-#### Terminal 2 — Client in Region Europe (`192.168.56.72`):
-```bash
-# 1. Ask DNS where cdn.ozy.cns is:
-dig @192.168.56.10 cdn.ozy.cns +short
-```
-* **Output:** `192.168.56.72` *(DNS routed client to the closest Europe edge!)*
-
-```bash
-# 2. Fetch the webpage using the exact same domain name:
-curl -sI "http://cdn.ozy.cns" | grep -iE "x-served|x-cache"
-```
-* **Verified Header Output:**
-  ```text
-  X-Cache-Status: HIT
-  X-Served-By: Edge-Cache-Europe (192.168.56.72)
-  ```
-
----
-
-### Step 3: Demonstrate Edge Caching (`MISS` vs `HIT`)
-> *"Now we prove that the edge servers actually cache content and offload the central Origin server."*
-
-Run on **Edge Cache Node 1 (`192.168.56.71`)**:
-
-```bash
-# Request 1: Fresh unique object -> Cache MISS (fetched from Origin .20)
-curl -sI "http://192.168.56.71/?v=live_demo" | grep -iE "x-cache-status|x-served"
-```
-* **Output:**
+* **Live Verified Header Output:**
   ```text
   X-Cache-Status: MISS
   X-Served-By: Edge-Cache-Africa (192.168.56.71)
   ```
+*Run again to show caching:*
+```bash
+curl -sI "http://cdn.ozy.cns/?v=africa_user" | grep -iE "x-served|x-cache"
+```
+* **Output:** **`X-Cache-Status: HIT`** *(Served in 0.002s from Africa Edge!)*
+
+---
+
+### Step 3: Query from the European Client (`192.168.56.70`)
+**In Terminal 2 (European Client):**
+```bash
+# Query Geo-DNS:
+dig @192.168.56.10 cdn.ozy.cns +short
+```
+* **DNS Result:** **`192.168.56.72`** *(Geo-DNS automatically steers the European client to Europe Edge!)*
 
 ```bash
-# Request 2: Same object again -> Cache HIT (served in 0.002s from local RAM/disk)
-curl -sI "http://192.168.56.71/?v=live_demo" | grep -iE "x-cache-status|x-served"
+# Fetch Content via Domain Name:
+curl -sI "http://cdn.ozy.cns/?v=europe_user" | grep -iE "x-served|x-cache"
 ```
-* **Output:**
+* **Live Verified Header Output:**
   ```text
-  X-Cache-Status: HIT
-  X-Served-By: Edge-Cache-Africa (192.168.56.71)
+  X-Cache-Status: MISS
+  X-Served-By: Edge-Cache-Europe (192.168.56.72)
   ```
+*Run again to show caching:*
+```bash
+curl -sI "http://cdn.ozy.cns/?v=europe_user" | grep -iE "x-served|x-cache"
+```
+* **Output:** **`X-Cache-Status: HIT`** *(Served in 0.002s from Europe Edge!)*
 
 ---
 
 ## 📊 Summary Assessment Matrix
 
-| Rubric Requirement | Technical Evidence | Demonstration Command |
+| Requirement | Technical Proof | Live Command |
 |---|---|---|
-| **Regional Proximity Routing** | BIND 9 Geo-views steer Africa client to `.71` and Europe client to `.72` | `dig @192.168.56.10 cdn.ozy.cns +short` run from both clients |
-| **Origin Offloading** | Edge caches store copies of Apache web assets | Verified via `X-Served-By` headers pointing to edges, not origin |
-| **Cache Lifecycle (`MISS` -> `HIT`)** | First request pulls from origin, second request served from local edge RAM | `curl -sI "http://cdn.ozy.cns/?v=demo" \| grep -i x-cache-status` |
+| **Geographic Proximity Steering** | African client (.25) gets `.71`; European client (.70) gets `.72` | `dig @192.168.56.10 cdn.ozy.cns +short` on both clients |
+| **Regional Edge Caching** | Each regional edge serves from local RAM/SSD with `X-Cache-Status: HIT` | `curl -sI "http://cdn.ozy.cns/?v=..." \| grep -i x-cache` |
+| **Origin Offloading** | Central Apache on `192.168.56.20` handles 0 requests once cached | `tail -f /var/log/apache2/access.log` on Origin stays silent during HITs |
+| **Region Identification** | Explicit response headers tag `Edge-Cache-Africa` vs `Edge-Cache-Europe` | `grep -i "x-served-by"` in HTTP response |
